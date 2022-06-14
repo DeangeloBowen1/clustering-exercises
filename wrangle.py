@@ -1,31 +1,15 @@
-#Ignore warnings
-import warnings
-warnings.filterwarnings("ignore")
-
-#imports for user defined functions
 from env import host, user, password, get_db_url
-
-# Imports for calculations and data frame manipulation
-import math
+import pandas as pd 
+import os
 import numpy as np
 import pandas as pd
-
-#imports for splitting data and imputing
-from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
-from sklearn.impute import KNNImputer
-
-#Imports for creating data visualizations
 import matplotlib.pyplot as plt 
 import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler
 
-def get_zillow_data(use_cache=True):
-    '''
-    This function takes in no arguments, uses the imported get_db_url function to establish a connection 
-    with the mysql database, and uses a SQL query to retrieve telco data creating a dataframe,
-    The function caches that dataframe locally as a csv file called zillow.csv, it uses an if statement to use the cached csv
-    instead of a fresh SQL query on future function calls. The function returns a dataframe with the telco data.
-    '''
+def acquire(use_cache=True):
     filename = 'zillow.csv'
 
     if os.path.isfile(filename) and use_cache:
@@ -60,32 +44,26 @@ def get_zillow_data(use_cache=True):
         df.to_csv(filename, index=False)
     return df
 
-
-def null_data(df):
-    # displays null rows and displays them for exploration
+def nulls_data(df):
     nulls = df.isnull().sum()
     rows = len(df)
-    percent = nulls / rows 
-    dataframe = pd.DataFrame({'rows_missing': nulls, 'percent_missing': percent})
+    percent_missing = nulls / rows 
+    dataframe = pd.DataFrame({'rows_missing': nulls, 'percent_missing': percent_missing})
     return dataframe
 
-
 def null_cols(df):
-    # observe null columns and displays them for exploration
-    data = pd.DataFrame(df.isnull().sum(axis=1),
-                      columns = ['cols_missing']).reset_index().groupby('cols_missing').count().reset_index().rename(columns = {'index':'rows'})
-    data['percent_missing'] = data.cols_missing/df.shape[1]
-    return data
-
+    new_df = pd.DataFrame(df.isnull().sum(axis=1), columns = ['cols_missing']).reset_index()\
+    .groupby('cols_missing').count().reset_index().\
+    rename(columns = {'index': 'rows'})
+    new_df['percent_missing'] = new_df.cols_missing/df.shape[1]
+    return new_df
 
 def get_single_unit_homes(df):
-    # define and obtain single unit properties
-    single_unit_homes = [261, 262, 263, 264, 266, 268, 273, 276, 279]
-    df = df[df.propertylandusetypeid.isin(single_unit_homes)]
-    return
-
-def handle_missing_values(df, prop_required_column = .67, prop_required_row = .75):
-    # drops values that are within a certain proportion of missing values
+    single_unit = [261, 262, 263, 264, 266, 268, 273, 276, 279]
+    df = df[df.propertylandusetypeid.isin(single_unit)]
+    return df
+    
+def handle_missing_values(df, prop_required_column = .5, prop_required_row = .75):
     threshold = int(round(prop_required_column*len(df.index),0))
     df.dropna(axis=1, thresh=threshold, inplace=True)
     threshold = int(round(prop_required_row*len(df.columns),0))
@@ -93,59 +71,57 @@ def handle_missing_values(df, prop_required_column = .67, prop_required_row = .7
     return df
 
 
-# impute strategy and columns to be imputed
+def split_data(df):
+    train_validate, test = train_test_split(df, test_size=.2, random_state=123)
+    train, validate = train_test_split(train_validate, test_size=.3, random_state=123)
+    return train, validate, test
+
+## dictionary to be used in imputing_missing_values function
 impute_strategy = {
-    'mean' : [
-    'calculatedfinishedsquarefeet',
-    'finishedsquarefeet12',
-    'structuretaxvaluedollarcnt',
-    'taxvaluedollarcnt',
-    'landtaxvaluedollarcnt',
-    'taxamount',
-    'lotsizesquarefeet'
-],
-    
+'mean' : [
+       'calculatedfinishedsquarefeet',
+       'finishedsquarefeet12',
+     'structuretaxvaluedollarcnt',
+        'taxvaluedollarcnt',
+        'landtaxvaluedollarcnt',
+        'taxamount'
+    ],
     'most_frequent' : [
-    'calculatedbathnbr',
-    'fullbathcnt',
-    'regionidcity',
-    'regionidzip',
-    'yearbuilt'
+        'calculatedbathnbr',
+         'fullbathcnt',
+        'regionidcity',
+         'regionidzip',
+         'yearbuilt'
      ],
-    
      'median' : [
-     'censustractandblock'
+         'censustractandblock'
      ]
  }
 
-
-def impute_missing_data(df, impute_strategy):
-    """Impute values after train validate test for dataframe integrity"""
+def impute_missing_values(df, impute_strategy):
     train, validate, test = split_data(df)
     
-    for strategy, cols in impute_stragety.items():
+    for strategy, columns in impute_strategy.items():
         imputer = SimpleImputer(strategy = strategy)
-        imputer.fit(train[cols])
-        
-        train[cols] = imputer.transform(train[cols])
-        validate[cols] = imputer.transform(validate[cols])
-        test[cols] = imputer.transform(test[cols])
+        imputer.fit(train[columns])
+
+        train[columns] = imputer.transform(train[columns])
+        validate[columns] = imputer.transform(validate[columns])
+        test[columns] = imputer.transform(test[columns])
+    
     return train, validate, test
+
 
 
 def prepare_zillow(df):
-    '''Prepare zillow for data exploration
-       split into train, test, validate'''
+    '''Prepare zillow for data exploration.'''
     df = get_single_unit_homes(df)
     df = handle_missing_values(df)
-    train, validate, test = impute_missing_values(df, columns_strategy)
+    train, validate, test = impute_missing_values(df, impute_strategy)
     return train, validate, test
-
-
+    
 def wrangle_zillow():
-    '''Acquire and prepare data from Zillow database for exploration'''
-    train, validate, test = prepare_zillow(get_zillow_data())
+    '''Acquire and prepare data from Zillow database for explore'''
+    train, validate, test = prepare_zillow(acquire())
     
     return train, validate, test
-
-
